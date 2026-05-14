@@ -7,7 +7,7 @@ import { useEditorStore } from "@/lib/editorStore";
 import type { AiResult } from "@/lib/types";
 
 type Props = {
-  getCanvasImage: () => string | undefined;
+  getCanvasImage: (options?: { includeAnnotations?: boolean }) => string | undefined;
   getMaskImage: () => string | undefined;
 };
 
@@ -42,7 +42,7 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
   }
 
   async function runEdit() {
-    const image = getCanvasImage();
+    const image = getCanvasImage({ includeAnnotations: false });
     const mask = getMaskImage();
     if (!image) {
       setError("Importe ou gere uma imagem antes de editar.");

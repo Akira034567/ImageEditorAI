@@ -34,3 +34,11 @@ export async function saveProject(project: SerializedProject) {
 export async function loadLatestProject() {
   return db.projects.orderBy("updatedAt").last();
 }
+
+export async function listProjects() {
+  return db.projects.orderBy("updatedAt").reverse().toArray();
+}
+
+export async function deleteProject(id: string) {
+  await db.projects.delete(id);
+}

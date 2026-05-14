@@ -8,7 +8,7 @@ import { useEditorStore } from "@/lib/editorStore";
 import type { EditorLayer, ImageLayer, PathLayer, ShapeLayer, TextLayer } from "@/lib/types";
 
 export type CanvasStageHandle = {
-  exportImage: (mimeType?: "image/png" | "image/jpeg") => string | undefined;
+  exportImage: (mimeType?: "image/png" | "image/jpeg", options?: { includeAnnotations?: boolean }) => string | undefined;
   exportMask: () => string | undefined;
 };
 
@@ -84,9 +84,23 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
   }, [selectedLayerId, document.layers]);
 
   useImperativeHandle(ref, () => ({
-    exportImage: (mimeType = "image/png") => {
+    exportImage: (mimeType = "image/png", options = { includeAnnotations: true }) => {
       const group = stageRef.current?.findOne("#document-root");
-      return group?.toDataURL({
+      if (!group) return undefined;
+
+      const hiddenNodes: Konva.Node[] = [];
+      if (options.includeAnnotations === false) {
+        document.layers.filter(isAnnotation).forEach((layer) => {
+          const node = nodeRefs.current.get(layer.id);
+          if (node?.visible()) {
+            node.visible(false);
+            hiddenNodes.push(node);
+          }
+        });
+        group.getLayer()?.batchDraw();
+      }
+
+      const dataUrl = group.toDataURL({
         mimeType,
         x: 0,
         y: 0,
@@ -94,8 +108,12 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
         height: document.height,
         pixelRatio: 1
       });
+
+      hiddenNodes.forEach((node) => node.visible(true));
+      if (hiddenNodes.length) group.getLayer()?.batchDraw();
+      return dataUrl;
     },
-    exportMask: () => renderAnnotationOverlay(document.layers, document.width, document.height)
+    exportMask: () => renderEditMask(document.layers, document.width, document.height)
   }));
 
   function getPointer() {
@@ -416,20 +434,22 @@ function createTextLayer(x: number, y: number): TextLayer {
   };
 }
 
-function renderAnnotationOverlay(layers: EditorLayer[], width: number, height: number) {
+function renderEditMask(layers: EditorLayer[], width: number, height: number) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
   if (!context) return undefined;
-  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.globalCompositeOperation = "destination-out";
 
   layers.filter(isAnnotation).forEach((layer) => {
     context.save();
-    context.globalAlpha = layer.opacity;
-    context.strokeStyle = layer.kind === "path" ? layer.stroke : layer.stroke;
-    context.fillStyle = layer.kind === "shape" ? layer.fill : "transparent";
-    context.lineWidth = layer.kind === "path" ? layer.strokeWidth : layer.strokeWidth;
+    context.globalAlpha = 1;
+    context.strokeStyle = "#000000";
+    context.fillStyle = "#000000";
+    context.lineWidth = Math.max(layer.strokeWidth, 14);
     context.lineCap = "round";
     context.lineJoin = "round";
 

@@ -91,8 +91,13 @@ button:disabled {
   line-height: 1.1;
 }
 
-.brand p {
+.project-title-input {
+  display: block;
+  width: min(260px, 44vw);
   margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
@@ -119,6 +124,11 @@ button:disabled {
 .icon-button {
   width: 38px;
   padding: 0;
+}
+
+.icon-button.compact {
+  width: 30px;
+  min-height: 30px;
 }
 
 .icon-button.active,
@@ -208,6 +218,18 @@ button:disabled {
   letter-spacing: 0;
 }
 
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.panel-title-row h2 {
+  margin: 0;
+}
+
 .layer-list {
   display: flex;
   flex-direction: column;
@@ -249,6 +271,61 @@ button:disabled {
   border-radius: 6px;
   display: grid;
   place-items: center;
+}
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.project-item.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+}
+
+.project-open {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.project-open span {
+  min-width: 0;
+}
+
+.project-open strong,
+.project-open small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-open strong {
+  font-size: 13px;
+}
+
+.project-open small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .prompt-box {

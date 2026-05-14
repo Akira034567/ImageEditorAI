@@ -26,6 +26,7 @@ type EditorState = {
   setError: (error?: string) => void;
   setSettings: (settings: Partial<AiSettings>) => void;
   setSelectedLayer: (id?: string) => void;
+  renameDocument: (name: string) => void;
   setBaseImage: (src: string, width?: number, height?: number) => void;
   addLayer: (layer: EditorLayer) => void;
   updateLayer: (id: string, patch: Partial<EditorLayer>) => void;
@@ -109,6 +110,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setError: (error) => set({ error, status: error ? "Algo deu errado" : get().status }),
   setSettings: (settings) => set((state) => ({ settings: { ...state.settings, ...settings } })),
   setSelectedLayer: (selectedLayerId) => set({ selectedLayerId }),
+  renameDocument: (name) =>
+    set((state) =>
+      withHistory(state, {
+        ...state.document,
+        name: name.trim() || "Projeto sem titulo"
+      })
+    ),
   setBaseImage: (src, width, height) =>
     set((state) =>
       withHistory(state, {

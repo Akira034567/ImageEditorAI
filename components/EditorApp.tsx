@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileJson, FolderOpen, ImagePlus, RotateCcw, RotateCw, Save } from "lucide-react";
 import { CanvasStage, type CanvasStageHandle } from "@/components/CanvasStage";
 import { LayersPanel } from "@/components/LayersPanel";
 import { PromptPanel } from "@/components/PromptPanel";
+import { ProjectsPanel } from "@/components/ProjectsPanel";
 import { Toolbar } from "@/components/Toolbar";
 import { loadLatestProject, saveProject } from "@/lib/db";
 import { downloadDataUrl, fileToDataUrl, safeJsonDownload } from "@/lib/imageUtils";
@@ -15,26 +16,59 @@ export function EditorApp() {
   const stageRef = useRef<CanvasStageHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
-  const { document, undo, redo, history, future, serialize, hydrate, setBaseImage, setStatus, setError, reset } =
+  const didLoadRef = useRef(false);
+  const [projectRefreshKey, setProjectRefreshKey] = useState(0);
+  const { document, undo, redo, history, future, serialize, hydrate, setBaseImage, setStatus, setError, reset, renameDocument } =
     useEditorStore();
 
   useEffect(() => {
     loadLatestProject()
       .then((project) => {
         if (project) hydrate(project);
+        didLoadRef.current = true;
       })
-      .catch(() => undefined);
+      .catch(() => {
+        didLoadRef.current = true;
+      });
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!didLoadRef.current) return;
+    const timer = window.setTimeout(() => {
+      saveProject(serialize())
+        .then(() => {
+          setProjectRefreshKey((key) => key + 1);
+          setStatus("Projeto salvo automaticamente");
+        })
+        .catch((error) => {
+          setError(error instanceof Error ? error.message : "Nao foi possivel salvar automaticamente.");
+        });
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [document, serialize, setError, setStatus]);
 
   async function importImage(file?: File) {
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    const image = new Image();
-    image.onload = () => {
-      setBaseImage(dataUrl, image.naturalWidth || 1024, image.naturalHeight || 1024);
-      setStatus("Imagem importada");
-    };
-    image.src = dataUrl;
+    try {
+      setError(undefined);
+      setStatus("Importando imagem...");
+      const dataUrl = await fileToDataUrl(file);
+      const image = new Image();
+      image.onload = () => {
+        setBaseImage(dataUrl, image.naturalWidth || 1024, image.naturalHeight || 1024);
+        setStatus("Imagem importada");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      };
+      image.onerror = () => {
+        setError("Nao foi possivel carregar esta imagem. Tente PNG, JPEG ou WebP.");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      };
+      image.src = dataUrl;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Nao foi possivel importar a imagem.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   }
 
   async function importProject(file?: File) {
@@ -43,14 +77,19 @@ export function EditorApp() {
       const project = JSON.parse(await file.text()) as SerializedProject;
       if (project.version !== 1 || !project.document) throw new Error("Arquivo de projeto invalido.");
       hydrate(project);
+      await saveProject(project);
+      setProjectRefreshKey((key) => key + 1);
+      if (projectInputRef.current) projectInputRef.current.value = "";
     } catch (error) {
       setError(error instanceof Error ? error.message : "Nao foi possivel importar o projeto.");
+      if (projectInputRef.current) projectInputRef.current.value = "";
     }
   }
 
   async function persistProject() {
     const project = serialize();
     await saveProject(project);
+    setProjectRefreshKey((key) => key + 1);
     setStatus("Projeto salvo no navegador");
   }
 
@@ -71,7 +110,12 @@ export function EditorApp() {
           <div className="brand-mark">IA</div>
           <div>
             <h1>Editor IA</h1>
-            <p>{document.name}</p>
+            <input
+              className="project-title-input"
+              value={document.name}
+              aria-label="Nome do projeto"
+              onChange={(event) => renameDocument(event.target.value)}
+            />
           </div>
         </div>
 
@@ -116,6 +160,7 @@ export function EditorApp() {
       </header>
 
       <aside className="sidebar">
+        <ProjectsPanel refreshKey={projectRefreshKey} onLoaded={() => setProjectRefreshKey((key) => key + 1)} />
         <LayersPanel />
       </aside>
 
@@ -125,7 +170,10 @@ export function EditorApp() {
       </section>
 
       <aside className="rightbar">
-        <PromptPanel getCanvasImage={() => stageRef.current?.exportImage("image/png")} getMaskImage={() => stageRef.current?.exportMask()} />
+        <PromptPanel
+          getCanvasImage={(options) => stageRef.current?.exportImage("image/png", options)}
+          getMaskImage={() => stageRef.current?.exportMask()}
+        />
       </aside>
     </main>
   );
