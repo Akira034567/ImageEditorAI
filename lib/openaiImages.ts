@@ -29,6 +29,11 @@ export async function generateImage({ prompt, model, size, quality, background }
     return { image: transparentPixel, revisedPrompt: `Mock: ${prompt}` };
   }
 
+  const modelInfo = getImageModel(model ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
+  if (modelInfo.provider === "google") {
+    return generateGoogleImage({ prompt, model: modelInfo.id, size });
+  }
+
   const client = getClient();
   const options = normalizeImageOptions({ model, size, quality, background }, "generate");
   const response = await client.images
@@ -52,6 +57,12 @@ export async function generateImage({ prompt, model, size, quality, background }
 export async function editImage({ prompt, model, size, quality, background, image, mask }: ImageRequest) {
   if (!prompt.trim()) throw new Error("Descreva a edicao antes de chamar a IA.");
   if (!image) throw new Error("Envie uma imagem para editar.");
+  const modelInfo = getImageModel(model ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
+  if (modelInfo.provider === "google") {
+    if (!modelInfo.supportsEdit) throw new Error(`${modelInfo.label} oferece apenas geracao texto-imagem. Use um modelo Nano Banana para editar.`);
+    return generateGoogleImage({ prompt, model: modelInfo.id, size, image });
+  }
+
   const options = normalizeImageOptions({ model, size, quality, background }, "edit");
   if (process.env.MOCK_OPENAI_IMAGES === "true") {
     return { image, revisedPrompt: `Mock edit: ${prompt}` };
@@ -148,6 +159,150 @@ function getApiKey() {
     throw new Error("OPENAI_API_KEY nao configurada. Crie um .env.local a partir de .env.example e reinicie o servidor.");
   }
   return apiKey;
+}
+
+function getGeminiApiKey() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY nao configurada. Crie uma chave no Google AI Studio, coloque no .env.local e reinicie o servidor.");
+  }
+  return apiKey;
+}
+
+async function generateGoogleImage(request: { prompt: string; model: ImageModelId; size?: ImageRequest["size"]; image?: string }) {
+  const modelInfo = getImageModel(request.model);
+  if (modelInfo.id.startsWith("imagen-")) {
+    if (request.image) throw new Error(`${modelInfo.label} oferece apenas geracao texto-imagem. Use Nano Banana para editar imagens.`);
+    return generateImagenImage(request);
+  }
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelInfo.id}:generateContent`, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": getGeminiApiKey(),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: createGeminiParts(request.prompt, request.image)
+        }
+      ],
+      generationConfig: createGeminiGenerationConfig(modelInfo.id, request.size)
+    })
+  });
+
+  if (!response.ok) throw await formatGoogleFetchError(response, "Google Gemini");
+
+  const payload = (await response.json()) as GoogleGenerateContentResponse;
+  const inline = findGeminiInlineImage(payload);
+  if (!inline?.data) throw new Error("O Google Gemini nao retornou uma imagem.");
+  return {
+    image: `data:${inline.mimeType ?? "image/png"};base64,${inline.data}`,
+    revisedPrompt: findGeminiText(payload)
+  };
+}
+
+async function generateImagenImage(request: { prompt: string; model: ImageModelId; size?: ImageRequest["size"] }) {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${request.model}:predict`, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": getGeminiApiKey(),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      instances: [{ prompt: request.prompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: googleAspectRatio(request.size),
+        imageSize: "1K"
+      }
+    })
+  });
+
+  if (!response.ok) throw await formatGoogleFetchError(response, "Google Imagen");
+
+  const payload = (await response.json()) as GoogleImagenResponse;
+  const base64 = payload.predictions?.[0]?.bytesBase64Encoded ?? payload.predictions?.[0]?.image?.bytesBase64Encoded;
+  if (!base64) throw new Error("O Google Imagen nao retornou uma imagem.");
+  return {
+    image: `data:image/png;base64,${base64}`
+  };
+}
+
+function createGeminiParts(prompt: string, image?: string) {
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [{ text: prompt }];
+  if (image) {
+    parts.push({
+      inlineData: {
+        mimeType: image.match(/data:(.*?);base64/)?.[1] ?? "image/png",
+        data: readBase64(image)
+      }
+    });
+  }
+  return parts;
+}
+
+function createGeminiGenerationConfig(model: ImageModelId, size?: ImageRequest["size"]) {
+  const aspectRatio = googleAspectRatio(size);
+  if (!aspectRatio) return undefined;
+  const imageConfig: Record<string, string> = { aspectRatio };
+  if (model === "gemini-3.1-flash-image-preview" || model === "gemini-3-pro-image-preview") {
+    imageConfig.imageSize = "1K";
+  }
+  return {
+    responseFormat: {
+      image: imageConfig
+    }
+  };
+}
+
+function googleAspectRatio(size?: ImageRequest["size"]) {
+  if (size === "1024x1536") return "2:3";
+  if (size === "1536x1024") return "3:2";
+  if (size === "1024x1024") return "1:1";
+  return undefined;
+}
+
+async function formatGoogleFetchError(response: Response, provider: string) {
+  const detail = await response.text();
+  try {
+    const payload = JSON.parse(detail) as { error?: { message?: string; status?: string } };
+    return new Error(`${provider} retornou erro: ${payload.error?.message ?? detail}`);
+  } catch {
+    return new Error(`${provider} retornou erro: ${detail}`);
+  }
+}
+
+type GoogleGenerateContentResponse = {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+        inlineData?: {
+          mimeType?: string;
+          data?: string;
+        };
+      }>;
+    };
+  }>;
+};
+
+type GoogleImagenResponse = {
+  predictions?: Array<{
+    bytesBase64Encoded?: string;
+    image?: {
+      bytesBase64Encoded?: string;
+    };
+  }>;
+};
+
+function findGeminiInlineImage(payload: GoogleGenerateContentResponse) {
+  return payload.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).find((part) => part.inlineData)?.inlineData;
+}
+
+function findGeminiText(payload: GoogleGenerateContentResponse) {
+  return payload.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).find((part) => part.text)?.text;
 }
 
 function normalizeImageOptions(
