@@ -89,6 +89,10 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
       if (!group) return undefined;
 
       const hiddenNodes: Konva.Node[] = [];
+      const transformer = transformerRef.current;
+      const transformerWasVisible = transformer?.visible() ?? false;
+      transformer?.visible(false);
+
       if (options.includeAnnotations === false) {
         document.layers.filter(isAnnotation).forEach((layer) => {
           const node = nodeRefs.current.get(layer.id);
@@ -110,7 +114,8 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
       });
 
       hiddenNodes.forEach((node) => node.visible(true));
-      if (hiddenNodes.length) group.getLayer()?.batchDraw();
+      transformer?.visible(transformerWasVisible);
+      if (hiddenNodes.length || transformer) group.getLayer()?.batchDraw();
       return dataUrl;
     },
     exportMask: () => renderEditMask(document.layers, document.width, document.height),

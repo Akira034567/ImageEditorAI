@@ -8,6 +8,7 @@ export function LayersPanel() {
     document,
     selectedLayerId,
     setSelectedLayer,
+    resizeDocument,
     updateLayer,
     removeLayer,
     duplicateLayer,
@@ -17,6 +18,11 @@ export function LayersPanel() {
   } = useEditorStore();
 
   const layers = [...document.layers].reverse();
+
+  function commitDocumentSize(axis: "width" | "height", value: string) {
+    const numeric = Number(value);
+    resizeDocument(axis === "width" ? numeric : document.width, axis === "height" ? numeric : document.height);
+  }
 
   return (
     <>
@@ -68,11 +74,25 @@ export function LayersPanel() {
         <div className="field-row">
           <label className="field">
             Largura
-            <input readOnly value={document.width} />
+            <input
+              type="number"
+              min={64}
+              max={8192}
+              step={1}
+              value={document.width}
+              onChange={(event) => commitDocumentSize("width", event.target.value)}
+            />
           </label>
           <label className="field">
             Altura
-            <input readOnly value={document.height} />
+            <input
+              type="number"
+              min={64}
+              max={8192}
+              step={1}
+              value={document.height}
+              onChange={(event) => commitDocumentSize("height", event.target.value)}
+            />
           </label>
         </div>
       </section>

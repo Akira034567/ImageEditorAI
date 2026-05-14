@@ -21,9 +21,9 @@ export function AiProgress() {
 
   const message = useMemo(() => {
     if (!aiJob) return "";
-    if (elapsed < 8) return "Preparando...";
-    if (elapsed < 25) return "Processando imagem...";
-    if (elapsed < 55) return "Ainda trabalhando...";
+    if (elapsed < 8) return "Preparando";
+    if (elapsed < 25) return "Processando imagem";
+    if (elapsed < 55) return "Ainda trabalhando";
     return "Quase la...";
   }, [aiJob, elapsed]);
 

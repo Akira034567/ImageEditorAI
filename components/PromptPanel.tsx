@@ -11,6 +11,7 @@ import type { AiResult } from "@/lib/types";
 type Props = {
   getCanvasImage: (options?: { includeAnnotations?: boolean }) => string | undefined;
   getMaskImage: () => string | undefined;
+  hasAnnotations: () => boolean;
 };
 
 async function postAi(path: string, body: unknown): Promise<AiResult> {
@@ -24,7 +25,7 @@ async function postAi(path: string, body: unknown): Promise<AiResult> {
   return payload;
 }
 
-export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
+export function PromptPanel({ getCanvasImage, getMaskImage, hasAnnotations }: Props) {
   const {
     prompt,
     document,
@@ -53,6 +54,10 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
     const mask = getMaskImage();
     if (!image) {
       setError("Importe ou gere uma imagem antes de editar.");
+      return;
+    }
+    if (!hasAnnotations()) {
+      setError("Desenhe uma area na imagem antes de usar Editar area marcada. Para ajustar a imagem inteira, use Ajustar imagem.");
       return;
     }
     await run("/api/ai/edit", { prompt, image, mask, ...settings }, setPendingResult, "edit");

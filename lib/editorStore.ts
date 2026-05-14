@@ -35,6 +35,7 @@ type EditorState = {
   setSettings: (settings: Partial<AiSettings>) => void;
   setSelectedLayer: (id?: string) => void;
   renameDocument: (name: string) => void;
+  resizeDocument: (width: number, height: number) => void;
   setBaseImage: (src: string, width?: number, height?: number) => void;
   addLayer: (layer: EditorLayer) => void;
   updateLayer: (id: string, patch: Partial<EditorLayer>) => void;
@@ -178,6 +179,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         name: name.trim() || "Projeto sem titulo"
       })
     ),
+  resizeDocument: (width, height) =>
+    set((state) => {
+      const nextWidth = clampDocumentSize(width);
+      const nextHeight = clampDocumentSize(height);
+      return withHistory(state, {
+        ...state.document,
+        width: nextWidth,
+        height: nextHeight
+      });
+    }),
   setBaseImage: (src, width, height) =>
     set((state) => {
       const nextWidth = width ?? state.document.width;
@@ -368,3 +379,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       future: []
     })
 }));
+
+function clampDocumentSize(value: number) {
+  if (!Number.isFinite(value)) return 1024;
+  return Math.round(Math.min(8192, Math.max(64, value)));
+}

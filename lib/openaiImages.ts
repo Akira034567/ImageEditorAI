@@ -131,7 +131,7 @@ function formatOpenAIErrorPayload(payload: OpenAIErrorPayload, action: "geracao"
 
   if (code === "moderation_blocked") {
     return new Error(
-      `A OpenAI bloqueou esta ${action} pelo sistema de seguranca. Reformule o pedido ou use uma imagem/anotacao menos ambigua.${suffix}`
+      `A OpenAI processou a imagem, mas bloqueou esta ${action} pelo sistema de seguranca. Isso pode acontecer por conteudo protegido, personagens/marcas reconheciveis, rostos, partes sensiveis ou pedidos ambiguos. Tente ocultar/remover camadas problematicas, marcar uma area menor ou usar um prompt mais neutro e especifico.${suffix}`
     );
   }
 

@@ -109,4 +109,12 @@ describe("editor store", () => {
       height: 480
     });
   });
+
+  it("redimensiona o documento com limites seguros", () => {
+    useEditorStore.getState().resizeDocument(1920, 1080);
+    expect(useEditorStore.getState().document).toMatchObject({ width: 1920, height: 1080 });
+
+    useEditorStore.getState().resizeDocument(8, 99999);
+    expect(useEditorStore.getState().document).toMatchObject({ width: 64, height: 8192 });
+  });
 });

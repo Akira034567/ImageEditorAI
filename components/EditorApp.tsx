@@ -195,6 +195,7 @@ export function EditorApp() {
         <PromptPanel
           getCanvasImage={(options) => stageRef.current?.exportImage("image/png", options)}
           getMaskImage={() => stageRef.current?.exportMask()}
+          hasAnnotations={() => stageRef.current?.hasAnnotations() ?? false}
         />
       </aside>
     </main>
