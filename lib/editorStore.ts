@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { v4 as uuid } from "uuid";
+import { DEFAULT_IMAGE_MODEL } from "@/lib/imageModels";
 import type { AiResult, AiSettings, EditorDocument, EditorLayer, SerializedProject, Tool } from "@/lib/types";
 
 type Snapshot = Pick<EditorDocument, "baseImage" | "layers" | "width" | "height" | "name">;
@@ -58,7 +59,7 @@ function createDocument(): EditorDocument {
 }
 
 const defaultSettings: AiSettings = {
-  model: "gpt-image-1.5",
+  model: DEFAULT_IMAGE_MODEL,
   size: "1024x1024",
   quality: "auto",
   background: "auto"

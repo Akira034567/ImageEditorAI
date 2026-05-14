@@ -70,7 +70,7 @@ export type ShapeLayer = {
 export type EditorLayer = ImageLayer | TextLayer | PathLayer | ShapeLayer;
 
 export type AiSettings = {
-  model: string;
+  model: ImageModelId;
   size: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
   quality: "auto" | "low" | "medium" | "high";
   background: "auto" | "transparent" | "opaque";
@@ -97,3 +97,4 @@ export type AiResult = {
   image: string;
   revisedPrompt?: string;
 };
+import type { ImageModelId } from "@/lib/imageModels";

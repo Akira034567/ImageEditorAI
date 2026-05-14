@@ -2,6 +2,7 @@
 
 import { WandSparkles } from "lucide-react";
 import Image from "next/image";
+import { IMAGE_MODELS } from "@/lib/imageModels";
 import { useEditorStore } from "@/lib/editorStore";
 import type { AiResult } from "@/lib/types";
 
@@ -96,8 +97,17 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
         <div className="prompt-box">
           <label className="field">
             Modelo
-            <input value={settings.model} onChange={(event) => setSettings({ model: event.target.value })} />
+            <select value={settings.model} onChange={(event) => setSettings({ model: event.target.value as never })}>
+              {IMAGE_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
           </label>
+          <div className="status">
+            {IMAGE_MODELS.find((model) => model.id === settings.model)?.description}
+          </div>
           <div className="field-row">
             <label className="field">
               Tamanho

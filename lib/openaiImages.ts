@@ -1,8 +1,9 @@
 import OpenAI from "openai";
+import { DEFAULT_IMAGE_MODEL, getImageModel, type ImageModelId } from "@/lib/imageModels";
 
 export type ImageRequest = {
   prompt: string;
-  model?: string;
+  model?: ImageModelId;
   size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
   quality?: "auto" | "low" | "medium" | "high";
   background?: "auto" | "transparent" | "opaque";
@@ -32,12 +33,11 @@ export async function generateImage({ prompt, model, size, quality, background }
   }
 
   const client = getClient();
+  const options = normalizeImageOptions({ model, size, quality, background }, "generate");
   const response = await client.images.generate({
-    model: model ?? process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
+    model: options.model,
     prompt,
-    size: size ?? "1024x1024",
-    quality: quality ?? "auto",
-    background: background ?? "auto"
+    ...options.parameters
   });
   const first = response.data?.[0];
   if (!first?.b64_json) throw new Error("A OpenAI nao retornou uma imagem.");
@@ -51,6 +51,7 @@ export async function generateImage({ prompt, model, size, quality, background }
 export async function editImage({ prompt, model, size, quality, background, image, mask }: ImageRequest) {
   if (!prompt.trim()) throw new Error("Descreva a edicao antes de chamar a IA.");
   if (!image) throw new Error("Envie uma imagem para editar.");
+  const options = normalizeImageOptions({ model, size, quality, background }, "edit");
   if (process.env.MOCK_OPENAI_IMAGES === "true") {
     return { image, revisedPrompt: `Mock edit: ${prompt}` };
   }
@@ -62,10 +63,8 @@ export async function editImage({ prompt, model, size, quality, background, imag
     },
     body: createEditForm({
       prompt,
-      model: model ?? process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1.5",
-      size: size ?? "1024x1024",
-      quality: quality ?? "auto",
-      background: background ?? "auto",
+      model: options.model,
+      parameters: options.parameters,
       image,
       mask
     })
@@ -86,13 +85,37 @@ export async function editImage({ prompt, model, size, quality, background, imag
   };
 }
 
-function createEditForm(request: Required<Pick<ImageRequest, "prompt" | "model" | "size" | "quality" | "background" | "image">> & Pick<ImageRequest, "mask">) {
+function normalizeImageOptions(
+  request: Pick<ImageRequest, "model" | "size" | "quality" | "background">,
+  action: "generate" | "edit"
+) {
+  const requestedModel = request.model ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL;
+  const modelInfo = getImageModel(requestedModel);
+  if (action === "edit" && !modelInfo.supportsEdit) {
+    throw new Error(`${modelInfo.label} nao oferece edicao de imagem. Selecione GPT Image 1.5, GPT Image 1, GPT Image 1 Mini ou DALL-E 2.`);
+  }
+
+  const parameters: Record<string, string> = {};
+  if (request.size && request.size !== "auto") parameters.size = request.size;
+
+  if (modelInfo.id.startsWith("gpt-image") || modelInfo.id === "chatgpt-image-latest") {
+    parameters.quality = request.quality ?? "auto";
+    parameters.background = modelInfo.supportsTransparentBackground ? request.background ?? "auto" : "auto";
+  } else if (modelInfo.id === "dall-e-3") {
+    parameters.quality = request.quality === "high" ? "hd" : "standard";
+  }
+
+  return {
+    model: modelInfo.id,
+    parameters
+  };
+}
+
+function createEditForm(request: { prompt: string; model: ImageModelId; parameters: Record<string, string>; image: string; mask?: string }) {
   const form = new FormData();
   form.append("model", request.model);
   form.append("prompt", request.prompt);
-  form.append("size", request.size);
-  form.append("quality", request.quality);
-  form.append("background", request.background);
+  Object.entries(request.parameters).forEach(([key, value]) => form.append(key, value));
   form.append("image", base64ToFile(request.image, "image.png"));
   if (request.mask) form.append("mask", base64ToFile(request.mask, "mask.png"));
   return form;
