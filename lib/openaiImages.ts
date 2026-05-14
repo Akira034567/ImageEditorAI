@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { deflateSync } from "node:zlib";
 import { DEFAULT_IMAGE_MODEL, getImageModel, type ImageModelId } from "@/lib/imageModels";
 
 export type ImageRequest = {
@@ -67,7 +68,7 @@ export async function editImage({ prompt, model, size, quality, background, imag
       model: options.model,
       parameters: options.parameters,
       image,
-      mask
+      mask: mask ?? createFullEditMask(image)
     })
   });
 
@@ -189,4 +190,67 @@ function base64ToBlob(dataUrl: string) {
   const mime = dataUrl.match(/data:(.*?);base64/)?.[1] ?? "image/png";
   const bytes = Buffer.from(readBase64(dataUrl), "base64");
   return new Blob([bytes], { type: mime });
+}
+
+function createFullEditMask(imageDataUrl: string) {
+  const imageBytes = Buffer.from(readBase64(imageDataUrl), "base64");
+  const size = readPngSize(imageBytes);
+  if (!size) return undefined;
+  return createTransparentPngDataUrl(size.width, size.height);
+}
+
+function readPngSize(bytes: Buffer) {
+  const pngSignature = "89504e470d0a1a0a";
+  if (bytes.subarray(0, 8).toString("hex") !== pngSignature || bytes.length < 24) return undefined;
+  return {
+    width: bytes.readUInt32BE(16),
+    height: bytes.readUInt32BE(20)
+  };
+}
+
+function createTransparentPngDataUrl(width: number, height: number) {
+  const png = Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", createIhdr(width, height)),
+    pngChunk("IDAT", zlibSyncTransparentRows(width, height)),
+    pngChunk("IEND", Buffer.alloc(0))
+  ]);
+  return `data:image/png;base64,${png.toString("base64")}`;
+}
+
+function createIhdr(width: number, height: number) {
+  const data = Buffer.alloc(13);
+  data.writeUInt32BE(width, 0);
+  data.writeUInt32BE(height, 4);
+  data[8] = 8;
+  data[9] = 6;
+  data[10] = 0;
+  data[11] = 0;
+  data[12] = 0;
+  return data;
+}
+
+function zlibSyncTransparentRows(width: number, height: number) {
+  const rowLength = width * 4 + 1;
+  return deflateSync(Buffer.alloc(rowLength * height));
+}
+
+function pngChunk(type: string, data: Buffer) {
+  const typeBuffer = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])), 0);
+  return Buffer.concat([length, typeBuffer, data, crc]);
+}
+
+function crc32(buffer: Buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let index = 0; index < 8; index += 1) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }

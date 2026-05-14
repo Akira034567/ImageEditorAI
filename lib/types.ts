@@ -83,6 +83,8 @@ export type EditorDocument = {
   height: number;
   baseImage?: string;
   layers: EditorLayer[];
+  aiHistory: AiHistoryItem[];
+  promptHistory: string[];
   createdAt: number;
   updatedAt: number;
 };
@@ -96,5 +98,13 @@ export type SerializedProject = {
 export type AiResult = {
   image: string;
   revisedPrompt?: string;
+};
+
+export type AiHistoryItem = AiResult & {
+  id: string;
+  prompt: string;
+  action: "generate" | "edit" | "element" | "adjust";
+  model: string;
+  createdAt: number;
 };
 import type { ImageModelId } from "@/lib/imageModels";

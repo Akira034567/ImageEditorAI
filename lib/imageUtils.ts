@@ -20,6 +20,20 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+export function getImageSize(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height
+      });
+    };
+    image.onerror = () => reject(new Error("Nao foi possivel medir a imagem."));
+    image.src = src;
+  });
+}
+
 export function downloadDataUrl(dataUrl: string, filename: string) {
   const anchor = document.createElement("a");
   anchor.href = dataUrl;

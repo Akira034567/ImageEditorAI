@@ -10,6 +10,7 @@ import type { EditorLayer, ImageLayer, PathLayer, ShapeLayer, TextLayer } from "
 export type CanvasStageHandle = {
   exportImage: (mimeType?: "image/png" | "image/jpeg", options?: { includeAnnotations?: boolean }) => string | undefined;
   exportMask: () => string | undefined;
+  hasAnnotations: () => boolean;
 };
 
 type Draft =
@@ -51,7 +52,6 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
     removeLayer,
     setStatus
   } = useEditorStore();
-  const baseImage = useHtmlImage(document.baseImage);
 
   const fit = useMemo(() => {
     const scale = Math.min((viewport.width - 40) / document.width, (viewport.height - 40) / document.height, 1);
@@ -113,7 +113,8 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
       if (hiddenNodes.length) group.getLayer()?.batchDraw();
       return dataUrl;
     },
-    exportMask: () => renderEditMask(document.layers, document.width, document.height)
+    exportMask: () => renderEditMask(document.layers, document.width, document.height),
+    hasAnnotations: () => document.layers.some(isAnnotation)
   }));
 
   function getPointer() {
@@ -261,7 +262,6 @@ export const CanvasStage = forwardRef<CanvasStageHandle>(function CanvasStage(_,
         <Layer>
           <Group id="document-root" x={fit.x} y={fit.y} scaleX={fit.scale} scaleY={fit.scale}>
             <Rect width={document.width} height={document.height} fill="#ffffff" shadowColor="rgba(0,0,0,0.18)" shadowBlur={20} />
-            {baseImage ? <KonvaImage image={baseImage} width={document.width} height={document.height} listening={false} /> : null}
             {document.layers.map((layer) => (
               <LayerNode
                 key={layer.id}

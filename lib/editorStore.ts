@@ -3,9 +3,11 @@
 import { create } from "zustand";
 import { v4 as uuid } from "uuid";
 import { DEFAULT_IMAGE_MODEL } from "@/lib/imageModels";
-import type { AiResult, AiSettings, EditorDocument, EditorLayer, SerializedProject, Tool } from "@/lib/types";
+import type { AiHistoryItem, AiResult, AiSettings, EditorDocument, EditorLayer, SerializedProject, Tool } from "@/lib/types";
 
 type Snapshot = Pick<EditorDocument, "baseImage" | "layers" | "width" | "height" | "name">;
+type AiAction = AiHistoryItem["action"];
+export const BASE_LAYER_ID = "__base__";
 
 type EditorState = {
   document: EditorDocument;
@@ -16,12 +18,18 @@ type EditorState = {
   prompt: string;
   settings: AiSettings;
   pendingResult?: AiResult;
+  aiJob?: {
+    action: AiAction;
+    label: string;
+    startedAt: number;
+  };
   status: string;
   error?: string;
   history: Snapshot[];
   future: Snapshot[];
   setTool: (tool: Tool) => void;
   setPrompt: (prompt: string) => void;
+  rememberPrompt: (prompt: string) => void;
   setStatus: (status: string) => void;
   setError: (error?: string) => void;
   setSettings: (settings: Partial<AiSettings>) => void;
@@ -38,6 +46,10 @@ type EditorState = {
   undo: () => void;
   redo: () => void;
   setPendingResult: (result?: AiResult) => void;
+  startAiJob: (job: { action: AiAction; label: string }) => void;
+  finishAiJob: () => void;
+  addAiResult: (result: AiResult, meta: { prompt: string; action: AiAction; model: string }) => void;
+  restoreAiResult: (id: string) => void;
   applyPendingAsBase: () => void;
   applyPendingAsLayer: () => void;
   serialize: () => SerializedProject;
@@ -54,6 +66,8 @@ function createDocument(): EditorDocument {
     width: 1024,
     height: 1024,
     layers: [],
+    aiHistory: [],
+    promptHistory: [],
     createdAt: now,
     updatedAt: now
   };
@@ -94,6 +108,40 @@ function withHistory(state: EditorState, document: EditorDocument) {
   };
 }
 
+function createBaseLayer(src: string, width: number, height: number): EditorLayer {
+  return {
+    id: BASE_LAYER_ID,
+    kind: "image",
+    name: "Base",
+    visible: true,
+    locked: false,
+    src,
+    x: 0,
+    y: 0,
+    width,
+    height,
+    rotation: 0,
+    opacity: 1
+  };
+}
+
+function migrateDocument(document: EditorDocument): EditorDocument {
+  if (!document.baseImage || document.layers.some((layer) => layer.id === BASE_LAYER_ID)) {
+    return {
+      ...document,
+      aiHistory: document.aiHistory ?? [],
+      promptHistory: document.promptHistory ?? []
+    };
+  }
+
+  return {
+    ...document,
+    layers: [createBaseLayer(document.baseImage, document.width, document.height), ...document.layers],
+    aiHistory: document.aiHistory ?? [],
+    promptHistory: document.promptHistory ?? []
+  };
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   document: createDocument(),
   tool: "select",
@@ -106,6 +154,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   future: [],
   setTool: (tool) => set({ tool }),
   setPrompt: (prompt) => set({ prompt }),
+  rememberPrompt: (prompt) =>
+    set((state) => {
+      const trimmed = prompt.trim();
+      if (!trimmed) return state;
+      const promptHistory = [trimmed, ...state.document.promptHistory.filter((item) => item !== trimmed)].slice(0, 80);
+      return {
+        document: {
+          ...state.document,
+          promptHistory,
+          updatedAt: Date.now()
+        }
+      };
+    }),
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error, status: error ? "Algo deu errado" : get().status }),
   setSettings: (settings) => set((state) => ({ settings: { ...state.settings, ...settings } })),
@@ -118,14 +179,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       })
     ),
   setBaseImage: (src, width, height) =>
-    set((state) =>
-      withHistory(state, {
+    set((state) => {
+      const nextWidth = width ?? state.document.width;
+      const nextHeight = height ?? state.document.height;
+      const baseLayer = createBaseLayer(src, nextWidth, nextHeight);
+      const layers = state.document.layers.some((layer) => layer.id === BASE_LAYER_ID)
+        ? state.document.layers.map((layer) => (layer.id === BASE_LAYER_ID ? baseLayer : layer))
+        : [baseLayer, ...state.document.layers];
+
+      return withHistory(state, {
         ...state.document,
         baseImage: src,
-        width: width ?? state.document.width,
-        height: height ?? state.document.height
-      })
-    ),
+        width: nextWidth,
+        height: nextHeight,
+        layers
+      });
+    }),
   addLayer: (layer) =>
     set((state) =>
       withHistory(state, {
@@ -204,6 +273,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
   setPendingResult: (pendingResult) => set({ pendingResult }),
+  startAiJob: (job) =>
+    set({
+      aiJob: {
+        ...job,
+        startedAt: Date.now()
+      },
+      error: undefined
+    }),
+  finishAiJob: () => set({ aiJob: undefined }),
+  addAiResult: (result, meta) =>
+    set((state) => {
+      const item: AiHistoryItem = {
+        ...result,
+        id: uuid(),
+        prompt: meta.prompt.trim(),
+        action: meta.action,
+        model: meta.model,
+        createdAt: Date.now()
+      };
+      return {
+        pendingResult: result,
+        document: {
+          ...state.document,
+          aiHistory: [item, ...state.document.aiHistory].slice(0, 60),
+          updatedAt: Date.now()
+        }
+      };
+    }),
+  restoreAiResult: (id) =>
+    set((state) => {
+      const item = state.document.aiHistory.find((result) => result.id === id);
+      return item
+        ? {
+            pendingResult: item,
+            prompt: item.prompt,
+            status: "Resposta da IA recuperada do historico",
+            error: undefined
+          }
+        : state;
+    }),
   applyPendingAsBase: () => {
     const result = get().pendingResult;
     if (!result) return;
@@ -236,10 +345,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   }),
   hydrate: (project) =>
     set({
-      document: project.document,
+      document: migrateDocument(project.document),
       settings: project.settings,
       selectedLayerId: undefined,
       pendingResult: undefined,
+      aiJob: undefined,
       status: "Projeto carregado",
       history: [],
       future: []
@@ -251,6 +361,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       tool: "select",
       prompt: "",
       pendingResult: undefined,
+      aiJob: undefined,
       status: "Novo projeto",
       error: undefined,
       history: [],

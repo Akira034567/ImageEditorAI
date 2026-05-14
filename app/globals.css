@@ -176,6 +176,10 @@ button:disabled {
   background: #fbfcfe;
 }
 
+.toolbar .tool-row {
+  flex: 0 0 auto;
+}
+
 .canvas-wrap {
   position: relative;
   min-width: 0;
@@ -188,6 +192,66 @@ button:disabled {
     linear-gradient(-45deg, transparent 75%, #e8edf4 75%);
   background-position: 0 0, 0 12px, 12px -12px, -12px 0;
   background-size: 24px 24px;
+}
+
+.ai-progress-compact {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 280px) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  max-width: min(620px, 58vw);
+  padding: 8px 10px;
+  border: 1px solid #b8d7d2;
+  border-radius: 8px;
+  background: #f0fdfa;
+  color: #134e4a;
+  font-size: 12px;
+}
+
+.ai-progress-label,
+.ai-progress-detail {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+
+.ai-progress-label {
+  font-weight: 700;
+}
+
+.ai-progress-compact small {
+  color: #0f766e;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-progress-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.16);
+}
+
+.ai-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #2563eb, #0f766e);
+  animation: ai-progress-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes ai-progress-slide {
+  0% {
+    transform: translateX(-105%);
+  }
+  50% {
+    transform: translateX(75%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
 }
 
 .empty-canvas {
@@ -392,6 +456,55 @@ button:disabled {
   width: 100%;
   max-height: 220px;
   object-fit: contain;
+}
+
+.ai-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-history-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.ai-history-item img {
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--panel-2);
+}
+
+.ai-history-item span {
+  min-width: 0;
+}
+
+.ai-history-item strong,
+.ai-history-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-history-item strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.ai-history-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 @media (max-width: 1100px) {

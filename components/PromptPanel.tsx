@@ -1,9 +1,11 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { WandSparkles } from "lucide-react";
 import Image from "next/image";
 import { IMAGE_MODELS } from "@/lib/imageModels";
 import { useEditorStore } from "@/lib/editorStore";
+import { getImageSize } from "@/lib/imageUtils";
 import type { AiResult } from "@/lib/types";
 
 type Props = {
@@ -25,20 +27,25 @@ async function postAi(path: string, body: unknown): Promise<AiResult> {
 export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
   const {
     prompt,
+    document,
     settings,
     pendingResult,
     setPrompt,
     setSettings,
     setPendingResult,
-    applyPendingAsBase,
+    rememberPrompt,
+    addAiResult,
+    restoreAiResult,
     applyPendingAsLayer,
     setBaseImage,
     setStatus,
-    setError
+    setError,
+    startAiJob,
+    finishAiJob
   } = useEditorStore();
 
   async function runGenerate() {
-    await run("/api/ai/generate", { prompt, ...settings }, (result) => setBaseImage(result.image));
+    await run("/api/ai/generate", { prompt, ...settings }, applyResultAsBase, "generate");
   }
 
   async function runEdit() {
@@ -48,23 +55,74 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
       setError("Importe ou gere uma imagem antes de editar.");
       return;
     }
-    await run("/api/ai/edit", { prompt, image, mask, ...settings }, setPendingResult);
+    await run("/api/ai/edit", { prompt, image, mask, ...settings }, setPendingResult, "edit");
+  }
+
+  async function runAgain() {
+    const image = getCanvasImage({ includeAnnotations: true });
+    if (!image) {
+      setError("Nao ha imagem na tela para ajustar.");
+      return;
+    }
+    await run("/api/ai/edit", { prompt, image, ...settings, size: "auto" }, setPendingResult, "adjust");
   }
 
   async function runElement() {
-    await run("/api/ai/element", { prompt, ...settings, background: "transparent" }, setPendingResult);
+    await run("/api/ai/element", { prompt, ...settings, background: "transparent" }, setPendingResult, "element");
   }
 
-  async function run(path: string, body: unknown, onResult: (result: AiResult) => void) {
+  const [promptCursor, setPromptCursor] = useState(-1);
+  const draftPromptRef = useRef("");
+
+  async function run(
+    path: string,
+    body: unknown,
+    onResult: (result: AiResult) => void | Promise<void>,
+    action: "generate" | "edit" | "element" | "adjust"
+  ) {
     try {
       setError(undefined);
-      setStatus("A IA esta trabalhando...");
+      startAiJob({ action, label: aiActionLabel(action) });
+      setStatus("Solicitacao enviada para a IA");
+      rememberPrompt(prompt);
       const result = await postAi(path, body);
-      onResult(result);
+      addAiResult(result, { prompt, action, model: settings.model });
+      await onResult(result);
       setStatus("Resultado recebido");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Erro inesperado");
+    } finally {
+      finishAiJob();
     }
+  }
+
+  function handlePromptKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.currentTarget.selectionStart !== event.currentTarget.selectionEnd) return;
+
+    const history = document.promptHistory;
+    if (!history.length) return;
+    const atFirstLine = event.currentTarget.selectionStart <= prompt.split("\n", 1)[0].length;
+    const atLastLine = event.currentTarget.selectionStart >= prompt.length - prompt.split("\n").at(-1)!.length;
+
+    if (event.key === "ArrowUp" && !atFirstLine) return;
+    if (event.key === "ArrowDown" && !atLastLine) return;
+
+    event.preventDefault();
+    if (promptCursor === -1) draftPromptRef.current = prompt;
+
+    const nextCursor =
+      event.key === "ArrowUp"
+        ? Math.min(promptCursor + 1, history.length - 1)
+        : Math.max(promptCursor - 1, -1);
+    setPromptCursor(nextCursor);
+    setPrompt(nextCursor === -1 ? draftPromptRef.current : history[nextCursor]);
+  }
+
+  async function applyResultAsBase(result: AiResult) {
+    const size = await getImageSize(result.image);
+    setBaseImage(result.image, size.width, size.height);
+    setPendingResult(undefined);
   }
 
   return (
@@ -74,7 +132,11 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
         <div className="prompt-box">
           <textarea
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={(event) => {
+              setPrompt(event.target.value);
+              setPromptCursor(-1);
+            }}
+            onKeyDown={handlePromptKeyDown}
             placeholder='Ex.: No circulo vermelho desenhado, coloque uma borboleta azul com asas detalhadas.'
           />
           <button className="text-button primary" onClick={runGenerate} disabled={!prompt.trim()}>
@@ -86,8 +148,8 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
           <button className="text-button secondary" onClick={runElement} disabled={!prompt.trim()}>
             Criar elemento
           </button>
-          <button className="text-button" onClick={runEdit} disabled={!prompt.trim()}>
-            Ajustar novamente
+          <button className="text-button" onClick={runAgain} disabled={!prompt.trim()}>
+            Ajustar imagem
           </button>
         </div>
       </section>
@@ -146,7 +208,7 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
             <Image alt="Resultado gerado pela IA" src={pendingResult.image} width={320} height={220} unoptimized />
           </div>
           <div className="tool-row" style={{ marginTop: 12 }}>
-            <button className="text-button primary" onClick={applyPendingAsBase}>
+            <button className="text-button primary" onClick={() => applyResultAsBase(pendingResult)}>
               Aplicar na base
             </button>
             <button className="text-button secondary" onClick={applyPendingAsLayer}>
@@ -158,6 +220,33 @@ export function PromptPanel({ getCanvasImage, getMaskImage }: Props) {
           </div>
         </section>
       ) : null}
+
+      <section className="panel">
+        <h2>Historico da IA</h2>
+        <div className="ai-history-list">
+          {document.aiHistory.length === 0 ? (
+            <p className="status">As respostas de imagem da IA aparecem aqui para voce recuperar versoes anteriores.</p>
+          ) : (
+            document.aiHistory.map((item) => (
+              <button key={item.id} className="ai-history-item" onClick={() => restoreAiResult(item.id)}>
+                <Image alt="Resposta anterior da IA" src={item.image} width={72} height={72} unoptimized />
+                <span>
+                  <strong>{item.action}</strong>
+                  <small>{item.prompt}</small>
+                  <small>{new Date(item.createdAt).toLocaleString("pt-BR")}</small>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
     </>
   );
+}
+
+function aiActionLabel(action: "generate" | "edit" | "element" | "adjust") {
+  if (action === "generate") return "Gerando nova imagem";
+  if (action === "edit") return "Editando area marcada";
+  if (action === "element") return "Criando elemento";
+  return "Ajustando imagem da tela";
 }

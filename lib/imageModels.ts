@@ -1,4 +1,5 @@
 export type ImageModelId =
+  | "gpt-image-2"
   | "gpt-image-1.5"
   | "chatgpt-image-latest"
   | "gpt-image-1"
@@ -17,6 +18,13 @@ export type ImageModelOption = {
 export const DEFAULT_IMAGE_MODEL: ImageModelId = "gpt-image-1.5";
 
 export const IMAGE_MODELS: ImageModelOption[] = [
+  {
+    id: "gpt-image-2",
+    label: "GPT Image 2",
+    description: "Opcao experimental: use somente se a sua conta/API reconhecer este modelo.",
+    supportsEdit: true,
+    supportsTransparentBackground: true
+  },
   {
     id: "gpt-image-1.5",
     label: "GPT Image 1.5",

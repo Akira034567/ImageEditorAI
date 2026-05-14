@@ -18,7 +18,7 @@ export function EditorApp() {
   const projectInputRef = useRef<HTMLInputElement>(null);
   const didLoadRef = useRef(false);
   const [projectRefreshKey, setProjectRefreshKey] = useState(0);
-  const { document, undo, redo, history, future, serialize, hydrate, setBaseImage, setStatus, setError, reset, renameDocument } =
+  const { document, aiJob, undo, redo, history, future, serialize, hydrate, setBaseImage, setStatus, setError, reset, renameDocument } =
     useEditorStore();
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function EditorApp() {
       saveProject(serialize())
         .then(() => {
           setProjectRefreshKey((key) => key + 1);
-          setStatus("Projeto salvo automaticamente");
+          if (!useEditorStore.getState().aiJob) setStatus("Projeto salvo automaticamente");
         })
         .catch((error) => {
           setError(error instanceof Error ? error.message : "Nao foi possivel salvar automaticamente.");
@@ -46,7 +46,29 @@ export function EditorApp() {
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [document, serialize, setError, setStatus]);
+  }, [document, aiJob, serialize, setError, setStatus]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT" || target?.isContentEditable;
+      if (isTyping) return;
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        undo();
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [redo, undo]);
 
   async function importImage(file?: File) {
     if (!file) return;

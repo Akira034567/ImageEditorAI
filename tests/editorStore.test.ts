@@ -69,4 +69,44 @@ describe("editor store", () => {
     expect(useEditorStore.getState().document.layers[0].id).toBe("a");
     expect(useEditorStore.getState().settings.model).toBe("gpt-image-1.5");
   });
+
+  it("guarda historico de prompts e respostas da IA", () => {
+    useEditorStore.getState().rememberPrompt("adicione uma borboleta");
+    useEditorStore.getState().rememberPrompt("adicione uma borboleta");
+    useEditorStore.getState().addAiResult(
+      { image: "data:image/png;base64,abc", revisedPrompt: "borboleta" },
+      { prompt: "adicione uma borboleta", action: "edit", model: "gpt-image-1.5" }
+    );
+
+    expect(useEditorStore.getState().document.promptHistory).toEqual(["adicione uma borboleta"]);
+    expect(useEditorStore.getState().document.aiHistory).toHaveLength(1);
+
+    const id = useEditorStore.getState().document.aiHistory[0].id;
+    useEditorStore.getState().restoreAiResult(id);
+    expect(useEditorStore.getState().pendingResult?.image).toBe("data:image/png;base64,abc");
+    expect(useEditorStore.getState().prompt).toBe("adicione uma borboleta");
+  });
+
+  it("mostra imagem base de projetos antigos como camada editavel", () => {
+    const project = useEditorStore.getState().serialize();
+    useEditorStore.getState().hydrate({
+      ...project,
+      document: {
+        ...project.document,
+        baseImage: "data:image/png;base64,base",
+        layers: [],
+        width: 640,
+        height: 480
+      }
+    });
+
+    expect(useEditorStore.getState().document.layers[0]).toMatchObject({
+      id: "__base__",
+      kind: "image",
+      name: "Base",
+      locked: false,
+      width: 640,
+      height: 480
+    });
+  });
 });

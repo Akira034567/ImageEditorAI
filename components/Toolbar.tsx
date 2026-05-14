@@ -1,6 +1,7 @@
 "use client";
 
 import { Circle, Eraser, MousePointer2, Pencil, Square, Type } from "lucide-react";
+import { AiProgress } from "@/components/AiProgress";
 import { useEditorStore } from "@/lib/editorStore";
 import type { Tool } from "@/lib/types";
 
@@ -14,7 +15,7 @@ const tools: Array<{ id: Tool; label: string; icon: React.ReactNode }> = [
 ];
 
 export function Toolbar() {
-  const { tool, setTool, status, error } = useEditorStore();
+  const { tool, setTool, status, error, aiJob } = useEditorStore();
 
   return (
     <div className="toolbar">
@@ -31,7 +32,7 @@ export function Toolbar() {
           </button>
         ))}
       </div>
-      <div className={`status ${error ? "error" : ""}`}>{error ?? status}</div>
+      {aiJob && !error ? <AiProgress /> : <div className={`status ${error ? "error" : ""}`}>{error ?? status}</div>}
     </div>
   );
 }
