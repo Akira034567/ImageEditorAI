@@ -15,11 +15,7 @@ const transparentPixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l8yYPwAAAABJRU5ErkJggg==";
 
 function getClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY nao configurada. Crie um .env.local a partir de .env.example.");
-  }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey: getApiKey() });
 }
 
 function readBase64(dataUrl: string) {
@@ -34,11 +30,15 @@ export async function generateImage({ prompt, model, size, quality, background }
 
   const client = getClient();
   const options = normalizeImageOptions({ model, size, quality, background }, "generate");
-  const response = await client.images.generate({
-    model: options.model,
-    prompt,
-    ...options.parameters
-  });
+  const response = await client.images
+    .generate({
+      model: options.model,
+      prompt,
+      ...options.parameters
+    })
+    .catch((error) => {
+      throw formatOpenAIError(error, "geracao");
+    });
   const first = response.data?.[0];
   if (!first?.b64_json) throw new Error("A OpenAI nao retornou uma imagem.");
 
@@ -56,10 +56,11 @@ export async function editImage({ prompt, model, size, quality, background, imag
     return { image, revisedPrompt: `Mock edit: ${prompt}` };
   }
 
+  const apiKey = getApiKey();
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+      Authorization: `Bearer ${apiKey}`
     },
     body: createEditForm({
       prompt,
@@ -71,8 +72,7 @@ export async function editImage({ prompt, model, size, quality, background, imag
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Falha na edicao da OpenAI: ${detail}`);
+    throw await formatOpenAIFetchError(response, "edicao");
   }
 
   const payload = (await response.json()) as { data?: Array<{ b64_json?: string; revised_prompt?: string }> };
@@ -83,6 +83,70 @@ export async function editImage({ prompt, model, size, quality, background, imag
     image: `data:image/png;base64,${first.b64_json}`,
     revisedPrompt: first.revised_prompt
   };
+}
+
+type OpenAIErrorPayload = {
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string;
+    param?: string | null;
+  };
+};
+
+async function formatOpenAIFetchError(response: Response, action: "geracao" | "edicao") {
+  const detail = await response.text();
+  const requestId = response.headers.get("x-request-id");
+
+  try {
+    const payload = JSON.parse(detail) as OpenAIErrorPayload;
+    return formatOpenAIErrorPayload(payload, action, requestId);
+  } catch {
+    return new Error(`Falha na ${action} da OpenAI: ${detail}`);
+  }
+}
+
+function formatOpenAIError(error: unknown, action: "geracao" | "edicao") {
+  if (typeof error === "object" && error) {
+    const payload = {
+      error: {
+        message: "message" in error ? String(error.message) : undefined,
+        type: "type" in error ? String(error.type) : undefined,
+        code: "code" in error ? String(error.code) : undefined,
+        param: "param" in error && typeof error.param === "string" ? error.param : null
+      }
+    };
+    const requestId = "request_id" in error && typeof error.request_id === "string" ? error.request_id : undefined;
+    return formatOpenAIErrorPayload(payload, action, requestId);
+  }
+
+  return new Error(`Falha na ${action} da OpenAI.`);
+}
+
+function formatOpenAIErrorPayload(payload: OpenAIErrorPayload, action: "geracao" | "edicao", requestId?: string | null) {
+  const code = payload.error?.code;
+  const message = payload.error?.message ?? "Erro desconhecido da OpenAI.";
+  const suffix = requestId ? ` ID da requisicao: ${requestId}.` : "";
+
+  if (code === "moderation_blocked") {
+    return new Error(
+      `A OpenAI bloqueou esta ${action} pelo sistema de seguranca. Reformule o pedido ou use uma imagem/anotacao menos ambigua.${suffix}`
+    );
+  }
+
+  if (code === "invalid_api_key") {
+    return new Error("A chave da OpenAI foi recusada. Verifique OPENAI_API_KEY no .env.local e reinicie o servidor.");
+  }
+
+  return new Error(`Falha na ${action} da OpenAI: ${message}${suffix}`);
+}
+
+function getApiKey() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY nao configurada. Crie um .env.local a partir de .env.example e reinicie o servidor.");
+  }
+  return apiKey;
 }
 
 function normalizeImageOptions(
@@ -116,13 +180,13 @@ function createEditForm(request: { prompt: string; model: ImageModelId; paramete
   form.append("model", request.model);
   form.append("prompt", request.prompt);
   Object.entries(request.parameters).forEach(([key, value]) => form.append(key, value));
-  form.append("image", base64ToFile(request.image, "image.png"));
-  if (request.mask) form.append("mask", base64ToFile(request.mask, "mask.png"));
+  form.append("image", base64ToBlob(request.image), "image.png");
+  if (request.mask) form.append("mask", base64ToBlob(request.mask), "mask.png");
   return form;
 }
 
-function base64ToFile(dataUrl: string, filename: string) {
+function base64ToBlob(dataUrl: string) {
   const mime = dataUrl.match(/data:(.*?);base64/)?.[1] ?? "image/png";
   const bytes = Buffer.from(readBase64(dataUrl), "base64");
-  return new File([bytes], filename, { type: mime });
+  return new Blob([bytes], { type: mime });
 }
