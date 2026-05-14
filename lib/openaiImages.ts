@@ -60,7 +60,7 @@ export async function editImage({ prompt, model, size, quality, background, imag
   const modelInfo = getImageModel(model ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_IMAGE_MODEL);
   if (modelInfo.provider === "google") {
     if (!modelInfo.supportsEdit) throw new Error(`${modelInfo.label} oferece apenas geracao texto-imagem. Use um modelo Nano Banana para editar.`);
-    return generateGoogleImage({ prompt, model: modelInfo.id, size, image });
+    return generateGoogleImage({ prompt: buildEditPrompt(prompt, Boolean(mask)), model: modelInfo.id, size, image });
   }
 
   const options = normalizeImageOptions({ model, size, quality, background }, "edit");
@@ -75,7 +75,7 @@ export async function editImage({ prompt, model, size, quality, background, imag
       Authorization: `Bearer ${apiKey}`
     },
     body: createEditForm({
-      prompt,
+      prompt: buildEditPrompt(prompt, Boolean(mask)),
       model: options.model,
       parameters: options.parameters,
       image,
@@ -331,7 +331,21 @@ function normalizeImageOptions(
   };
 }
 
-function createEditForm(request: { prompt: string; model: ImageModelId; parameters: Record<string, string>; image: string; mask?: string }) {
+function buildEditPrompt(prompt: string, hasMask: boolean) {
+  if (!hasMask) {
+    return `Edit the provided image according to this instruction. Preserve the existing composition, style, aspect ratio, and all unchanged details. Do not create a new standalone graphic unless explicitly asked. Instruction: ${prompt}`;
+  }
+
+  return `Return the full edited image, not a crop and not a standalone symbol. Edit only the transparent area of the mask in the provided image. The transparent masked area is the target selected by the user. Preserve every unmasked pixel and the original composition, calendar layout, paper texture, borders, background, typography style, and all other numbers/text. If the instruction says circled, marked, selected, or highlighted, interpret that as the transparent masked area, not as something to draw. Instruction: ${prompt}`;
+}
+
+function createEditForm(request: {
+  prompt: string;
+  model: ImageModelId;
+  parameters: Record<string, string>;
+  image: string;
+  mask?: string;
+}) {
   const form = new FormData();
   form.append("model", request.model);
   form.append("prompt", request.prompt);
